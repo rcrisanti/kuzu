@@ -5,6 +5,7 @@ use crate::ffi::ffi;
 /// Includes extra type information beyond what can be encoded in [Value](crate::value::Value) such as
 /// struct fields and types of lists
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum LogicalType {
     /// Special type for use with [`Value::Null`](crate::value::Value::Null)
     Any,

@@ -30,6 +30,7 @@ include = [
 arrow = { version = "55", optional = true, default-features = false, features = ["ffi"] }
 cxx = "=1.0.138" # latest version that builds on clang 15
 rust_decimal = { version = "1.37", default-features = false }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 time = "0.3"
 uuid = "1.6"
 
@@ -41,6 +42,7 @@ rustversion = "1"
 [dev-dependencies]
 anyhow = "1"
 rust_decimal_macros = "1.37"
+serde_json = "1.0.140"
 tempfile = "3"
 time = { version = "0.3", features = ["macros"] }
 
@@ -48,6 +50,7 @@ time = { version = "0.3", features = ["macros"] }
 default = []
 arrow = ["dep:arrow"]
 extension_tests = []
+serde = ["dep:serde", "time/serde", "uuid/serde", "rust_decimal/serde"]
 
 [package.metadata.docs.rs]
 all-features = true

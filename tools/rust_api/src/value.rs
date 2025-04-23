@@ -48,6 +48,7 @@ impl std::error::Error for ConversionError {
 /// `NodeVal` represents a node in the graph and stores the nodeID, label and properties of that
 /// node.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct NodeVal {
     id: InternalID,
     label: String,
@@ -107,6 +108,7 @@ impl std::fmt::Display for NodeVal {
 /// `RelVal` represents a relationship in the graph and stores the relID, src/dst nodes and properties of that
 /// rel
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct RelVal {
     src_node: InternalID,
     dst_node: InternalID,
@@ -159,6 +161,7 @@ impl std::fmt::Display for RelVal {
 
 /// Stores the `table_id` and `offset` of a node/rel.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct InternalID {
     pub offset: u64,
     pub table_id: u64,
@@ -199,6 +202,7 @@ impl From<(u64, u64)> for InternalID {
 ///
 /// Also see <https://kuzudb.com/docusaurus/cypher/data-types/overview.html>
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub enum Value {
     Null(LogicalType),
     Bool(bool),
@@ -966,6 +970,8 @@ mod tests {
     use crate::{Connection, Database, InternalID, LogicalType, NodeVal, RelVal, Value};
     use anyhow::Result;
     use rust_decimal_macros::dec;
+    #[cfg(feature = "serde")]
+    use serde_json::json;
     use std::collections::HashSet;
     use std::convert::TryInto;
     use std::iter::FromIterator;
@@ -1050,6 +1056,22 @@ mod tests {
             }
         )*
         }
+    }
+
+    #[cfg(feature = "serde")]
+    macro_rules! serde_tests {
+        ( $($name:ident: $value:expr => $expected:expr ),* $(,)? ) => {
+            $(
+                #[test]
+                fn $name() {
+                    let rust_value: Value = $value;
+                    let value_json = serde_json::to_value(&rust_value).expect("could not serialize value to json");
+                    assert_eq!($expected, value_json);
+                    let new_rust_value: Value = serde_json::from_value(value_json).expect("could not deserialize json to value");
+                    assert_eq!(rust_value, new_rust_value)
+                }
+            )*
+        };
     }
 
     type_tests! {
@@ -1217,6 +1239,52 @@ mod tests {
         db_decimal32: Value::Decimal(dec!(12.3456789)), "DECIMAL(9, 7)",
         db_decimal64: Value::Decimal(dec!(12.34567890)), "DECIMAL(18, 8)",
         db_decimal128: Value::Decimal(dec!(12.34567890)), "DECIMAL(38, 8)",
+    }
+
+    #[cfg(feature = "serde")]
+    serde_tests! {
+        serde_null_any: Value::Null(LogicalType::Any) => json!({"Null": "Any"}),
+        serde_null_list: Value::Null(LogicalType::List { child_type: Box::new(LogicalType::Float) }) => json!({"Null": {"List": {"child_type": "Float"}}}),
+        serde_bool: Value::Bool(true) => json!({"Bool": true}),
+        serde_int64: Value::Int64(82) => json!({"Int64": 82}),
+        serde_int32: Value::Int32(1) => json!({"Int32": 1}),
+        serde_int16: Value::Int16(100) => json!({"Int16": 100}),
+        serde_int8: Value::Int8(-6) => json!({"Int8": -6}),
+        serde_uint64: Value::UInt64(0) => json!({"UInt64": 0}),
+        serde_uint32: Value::UInt32(1001) => json!({"UInt32": 1001}),
+        serde_uint16: Value::UInt16(212) => json!({"UInt16": 212}),
+        serde_uint8: Value::UInt8(50) => json!({"UInt8": 50}),
+        serde_int128: Value::Int128(9009) => json!({"Int128": 9009}),
+        serde_double: Value::Double(-56.1234) => json!({"Double": -56.1234}),
+        serde_float: Value::Float(90.0) => json!({"Float": 90.0}),
+
+        // users can enable `time/serde-human-readable` in their own crates if they want a prettier
+        // format for all the `time` types
+        serde_date: Value::Date(date!(2025-04-23)) => json!({"Date": [2025, 113]}),
+        serde_interval: Value::Interval(time::Duration::days(23)) => json!({"Interval": [1987200, 0]}),
+        serde_timestamp: Value::Timestamp(datetime!(2025-04-23 13:26:21.12345 UTC)) => json!({"Timestamp": [2025, 113, 13, 26, 21, 123450000, 0, 0, 0]}),
+        serde_timestamp_tz: Value::TimestampTz(datetime!(2025-04-23 13:26:21.12345 UTC)) => json!({"TimestampTz": [2025, 113, 13, 26, 21, 123450000, 0, 0, 0]}),
+        serde_timestamp_ns: Value::TimestampNs(datetime!(2025-04-23 13:26:21.12345 UTC)) => json!({"TimestampNs": [2025, 113, 13, 26, 21, 123450000, 0, 0, 0]}),
+        serde_timestamp_ms: Value::TimestampMs(datetime!(2025-04-23 13:26:21.12345 UTC)) => json!({"TimestampMs": [2025, 113, 13, 26, 21, 123450000, 0, 0, 0]}),
+        serde_timestamp_sec: Value::TimestampSec(datetime!(2025-04-23 13:26:21.12345 UTC)) => json!({"TimestampSec": [2025, 113, 13, 26, 21, 123450000, 0, 0, 0]}),
+
+        serde_internal_id: Value::InternalID(InternalID {table_id: 0, offset: 0}) => json!({"InternalID": {"table_id": 0, "offset": 0}}),
+        serde_string: Value::String("Hello".to_string()) => json!({"String": "Hello"}),
+        serde_blob: Value::Blob(vec![0, 1, 2, 3, 4]) => json!({"Blob": [0, 1, 2, 3, 4]}),
+        serde_list: Value::List(LogicalType::UInt64, vec![Value::UInt64(0), Value::UInt64(12)]) => json!({"List": ["UInt64", [{"UInt64": 0}, {"UInt64": 12}]]}),
+        serde_aarry: Value::Array(LogicalType::Bool, vec![Value::Bool(true), Value::Bool(false)]) => json!({"Array": ["Bool", [{"Bool": true}, {"Bool": false}]]}),
+        serde_struct: Value::Struct(vec![("a".to_string(), Value::Bool(false)), ("name".to_string(), Value::String("Joe".to_string()))]) => json!({"Struct": [["a", {"Bool": false}], ["name", {"String": "Joe"}]]}),
+        serde_nodeval: Value::Node(NodeVal::new((10, 1), "my-label")) => json!({"Node": {"id": {"table_id": 1, "offset": 10}, "label": "my-label", "properties": []}}),
+        serde_rel: Value::Rel(RelVal::new((1, 4), (0, 6), "lab")) => json!({"Rel": {"src_node": {"offset": 1, "table_id": 4}, "dst_node": {"offset": 0, "table_id": 6}, "label": "lab", "properties": []}}),
+        serde_map: Value::Map((LogicalType::UInt64, LogicalType::Bool), vec![(Value::UInt64(4), Value::Bool(false))]) => json!({"Map": [["UInt64", "Bool"], [[{"UInt64": 4}, {"Bool": false}]]]}),
+        serde_union: Value::Union {
+            types: vec![("num".to_string(), LogicalType::Int64), ("str".to_string(), LogicalType::String)],
+            value: Box::new(Value::Int64(1))
+        } => json!({"Union": {"types": [["num", "Int64"], ["str", "String"]], "value": {"Int64": 1}}}),
+        serde_uuid: Value::UUID(uuid!("00000000-0000-0000-0000-ffff00000000")) => json!({"UUID": "00000000-0000-0000-0000-ffff00000000"}),
+        serde_uuid2: Value::UUID(uuid!("8f914bce-df4e-4244-9cd4-ea96bf0c58d4")) => json!({"UUID": "8f914bce-df4e-4244-9cd4-ea96bf0c58d4"}),
+        serde_decimal16: Value::Decimal(dec!(12.34)) => json!({"Decimal": "12.34"}),
+        serde_decimal128: Value::Decimal(dec!(12.34567890)) => json!({"Decimal": "12.34567890"}),
     }
 
     #[test]
